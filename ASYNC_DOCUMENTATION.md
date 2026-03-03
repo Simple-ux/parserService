@@ -1,0 +1,822 @@
+# Асинхронная работа с Parsers API
+
+## Содержание
+1. [Концепция асинхронной обработки](#концепция)
+2. [API Endpoints](#endpoints)
+3. [Типы парсеров](#парсеры)
+4. [Примеры запросов](#примеры)
+5. [Получение результатов](#результаты)
+6. [Обработка ошибок](#ошибки)
+7. [Жизненный цикл задачи](#жизненный-цикл)
+
+---
+
+## Концепция асинхронной обработки {#концепция}
+
+Асинхронная обработка позволяет отправить задачу на парсинг в очередь и получить `task_id`. Затем вы можете периодически проверять статус выполнения задачи, пока она обрабатывается в фоновом режиме.
+
+### Преимущества асинхронного подхода:
+- ⚡ **Быстрый ответ** - задача ставится в очередь немедленно
+- 🔄 **Неблокирующая обработка** - не нужно ждать результат
+- 📊 **Масштабируемость** - можно отправить множество задач одновременно
+- 🎯 **Надежность** - результате сохраняются в БД
+
+### Поток выполнения:
+```
+1. Клиент отправляет запрос → /create_task/
+   ├─ задача добавляется в очередь
+   └─ клиент получает task_id
+   
+2. Фоновый worker обрабатывает задачу
+   ├─ парсит данные
+   └─ сохраняет результат в БД
+   
+3. Клиент проверяет статус → /task_status/{task_id}
+   ├─ если status = "Processing" → проверить позже
+   ├─ если status = "Done" → результат готов
+   └─ если status = "Error" → произошла ошибка
+```
+
+---
+
+## API Endpoints {#endpoints}
+
+### 1. Создание асинхронной задачи
+
+**Endpoint:** `GET /create_task/`
+
+**Параметры:**
+| Параметр | Тип | Обязательный | Описание |
+|----------|-----|--------------|---------|
+| `parser_type` | string | ✅ | Тип парсера (EPTS, FSSP, FTS, GIBDD, NSIS) |
+| `vin` | string | ❌ | ВИН номер автомобиля (12-17 символов) |
+| `name` | string | ❌ | Имя (макс 20 символов) |
+| `last_name` | string | ❌ | Фамилия (макс 20 символов) |
+| `middle_name` | string | ❌ | Отчество (макс 30 символов) |
+| `birthdate` | string | ❌ | Дата рождения (форматы: DD.MM.YYYY, YYYY-MM-DD и др.) |
+| `cache` | integer | ❌ | Использовать кэш (1 - да, 0 - нет). По умолчанию: 1 |
+
+**Ответ (успех):**
+```json
+{
+  "task_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**Ответ (ошибка):**
+```json
+{
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "error",
+  "result": {},
+  "error": {
+    "message": "Неверные параметры запроса",
+    "code": 400
+  }
+}
+```
+
+---
+
+### 2. Получение статуса задачи
+
+**Endpoint:** `GET /task_status/{task_id}`
+
+**Параметры:**
+| Параметр | Тип | Описание |
+|----------|-----|---------|
+| `task_id` | string | ID задачи (получено из `/create_task/`) |
+
+**Возможные статусы:**
+| Статус | Описание |
+|--------|---------|
+| `Processing` | Задача обрабатывается |
+| `Done` | Задача успешно завершена |
+| `Error` | Произошла ошибка при обработке |
+
+**Ответ (задача в процессе):**
+```json
+{
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "Processing",
+  "result": null,
+  "error": null
+}
+```
+
+**Ответ (задача завершена успешно):**
+```json
+{
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "Done",
+  "result": {
+    "data": "... результат парсинга ..."
+  },
+  "error": null
+}
+```
+
+**Ответ (ошибка в процессе выполнения):**
+```json
+{
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "Error",
+  "result": null,
+  "error": {
+    "message": "Не удалось подключиться к сервису",
+    "code": 500
+  }
+}
+```
+
+---
+
+## Типы парсеров {#парсеры}
+
+### EPTS (Единый портал таможенных услуг)
+**Поддерживаемые параметры:** `vin`, `cache`
+
+**Пример результата:**
+```json
+{
+  "vin": "XW8ZZZ3CZ9E012345",
+  "customs_status": "cleared",
+  "declaration_number": "12345678",
+  "date": "2024-02-15"
+}
+```
+
+---
+
+### FSSP (Федеральная служба судебных приставов)
+**Поддерживаемые параметры:** `last_name`, `name`, `middle_name`, `birthdate`, `cache`
+
+**Пример результата:**
+```json
+{
+  "person": {
+    "last_name": "Иванов",
+    "first_name": "Иван",
+    "patronymic": "Иванович",
+    "birthdate": "1990.01.01"
+  },
+  "debts": [
+    {
+      "debt_id": "123456",
+      "amount": "50000.00",
+      "type": "алименты",
+      "status": "active"
+    }
+  ],
+  "total_debt": "50000.00"
+}
+```
+
+---
+
+### FTS (Федеральная таможенная служба)
+**Поддерживаемые параметры:** `vin`, `cache`
+
+**Пример результата:**
+```json
+{
+  "vin": "XW8ZZZ3CZ9E012345",
+  "vehicle_info": {
+    "brand": "BMW",
+    "model": "X5",
+    "year": 2020,
+    "color": "черный"
+  },
+  "customs_clearance": {
+    "status": "cleared",
+    "date": "2024-01-15",
+    "duty_paid": true
+  }
+}
+```
+
+---
+
+### GIBDD (Государственная инспекция безопасности дорожного движения)
+**Поддерживаемые параметры:** `vin`, `cache`
+
+**Примечание:** Может требовать решения CAPTCHA, решается автоматически с помощью ML модели
+
+**Пример результата:**
+```json
+{
+  "vin": "XW8ZZZ3CZ9E012345",
+  "violations": [
+    {
+      "violation_id": "1234567",
+      "date": "2024-01-10",
+      "offense": "превышение скорости",
+      "amount": "5000.00",
+      "status": "not_paid"
+    }
+  ],
+  "total_violations": 1,
+  "total_fines": "5000.00"
+}
+```
+
+---
+
+### NSIS (Национальная система информации о судимости)
+**Поддерживаемые параметры:** `last_name`, `name`, `middle_name`, `birthdate`, `cache`
+
+**Пример результата:**
+```json
+{
+  "person": {
+    "last_name": "Петров",
+    "first_name": "Петр",
+    "patronymic": "Петрович",
+    "birthdate": "1985.05.20"
+  },
+  "convictions": [
+    {
+      "date": "2015-03-15",
+      "sentence": "условное осуждение на 2 года",
+      "article": "160 УК РФ"
+    }
+  ]
+}
+```
+
+---
+
+## Примеры запросов {#примеры}
+
+### Пример 1: Проверка судебных задолженостей (FSSP)
+
+#### Шаг 1: Создание задачи
+```bash
+curl -X GET "http://localhost:10221/create_task/?parser_type=FSSP&last_name=Иванов&name=Иван&middle_name=Иванович&birthdate=1990.01.01"
+```
+
+**Ответ:**
+```json
+{
+  "task_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+}
+```
+
+#### Шаг 2: Проверка статуса
+```bash
+curl -X GET "http://localhost:10221/task_status/f47ac10b-58cc-4372-a567-0e02b2c3d479"
+```
+
+**Ответ (обработка):**
+```json
+{
+  "task_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "status": "Processing",
+  "result": null,
+  "error": null
+}
+```
+
+*Спустя 5-10 секунд:*
+
+**Ответ (готово):**
+```json
+{
+  "task_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "status": "Done",
+  "result": {
+    "person": {
+      "last_name": "Иванов",
+      "first_name": "Иван",
+      "patronymic": "Иванович"
+    },
+    "debts": [],
+    "total_debt": 0
+  },
+  "error": null
+}
+```
+
+---
+
+### Пример 2: Проверка таможенных документов (EPTS)
+
+#### Шаг 1: Создание задачи
+```bash
+curl -X GET "http://localhost:10221/create_task/?parser_type=EPTS&vin=XW8ZZZ3CZ9E012345"
+```
+
+**Ответ:**
+```json
+{
+  "task_id": "a5f7f1f7-1234-5678-9abc-def012345678"
+}
+```
+
+#### Шаг 2: Проверка статуса
+```bash
+curl -X GET "http://localhost:10221/task_status/a5f7f1f7-1234-5678-9abc-def012345678"
+```
+
+**Ответ (готово):**
+```json
+{
+  "task_id": "a5f7f1f7-1234-5678-9abc-def012345678",
+  "status": "Done",
+  "result": {
+    "vin": "XW8ZZZ3CZ9E012345",
+    "customs_status": "cleared",
+    "declaration_number": "98765432",
+    "date": "2024-02-10",
+    "documents": [
+      {
+        "type": "declaration",
+        "number": "98765432",
+        "status": "registered"
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+---
+
+### Пример 3: Проверка ГИБДД (GIBDD)
+
+#### Шаг 1: Создание задачи
+```bash
+curl -X GET "http://localhost:10221/create_task/?parser_type=GIBDD&vin=XW8ZZZ3CZ9E012345&cache=0"
+```
+
+**Ответ:**
+```json
+{
+  "task_id": "b8e9c3d1-7890-4567-bcde-f0123456789a"
+}
+```
+
+#### Шаг 2: Цикл проверки статуса (рекомендуется с интервалом 3-5 сек)
+
+**1-я проверка (обработка):**
+```bash
+curl -X GET "http://localhost:10221/task_status/b8e9c3d1-7890-4567-bcde-f0123456789a"
+```
+
+```json
+{
+  "task_id": "b8e9c3d1-7890-4567-bcde-f0123456789a",
+  "status": "Processing",
+  "result": null,
+  "error": null
+}
+```
+
+**2-я проверка (обработка):**
+```bash
+curl -X GET "http://localhost:10221/task_status/b8e9c3d1-7890-4567-bcde-f0123456789a"
+```
+
+```json
+{
+  "task_id": "b8e9c3d1-7890-4567-bcde-f0123456789a",
+  "status": "Processing",
+  "result": null,
+  "error": null
+}
+```
+
+**3-я проверка (завершено):**
+```bash
+curl -X GET "http://localhost:10221/task_status/b8e9c3d1-7890-4567-bcde-f0123456789a"
+```
+
+```json
+{
+  "task_id": "b8e9c3d1-7890-4567-bcde-f0123456789a",
+  "status": "Done",
+  "result": {
+    "vin": "XW8ZZZ3CZ9E012345",
+    "violations": [
+      {
+        "id": "1234567",
+        "date": "2024-01-15",
+        "type": "превышение скорости",
+        "amount": 5000,
+        "status": "not_paid"
+      },
+      {
+        "id": "1234568",
+        "date": "2024-01-20",
+        "type": "проезд на красный свет",
+        "amount": 1000,
+        "status": "paid"
+      }
+    ],
+    "total_fines": 6000
+  },
+  "error": null
+}
+```
+
+---
+
+### Пример 4: Проверка судимости (NSIS)
+
+#### Шаг 1: Создание задачи
+```bash
+curl -X GET "http://localhost:10221/create_task/?parser_type=NSIS&last_name=Петров&name=Петр&birthdate=01.01.1980"
+```
+
+**Ответ:**
+```json
+{
+  "task_id": "c9f0d2e3-4567-8901-cdef-123456789abc"
+}
+```
+
+#### Шаг 2: Получение результата
+```bash
+curl -X GET "http://localhost:10221/task_status/c9f0d2e3-4567-8901-cdef-123456789abc"
+```
+
+**Ответ (судимостей нет):**
+```json
+{
+  "task_id": "c9f0d2e3-4567-8901-cdef-123456789abc",
+  "status": "Done",
+  "result": {
+    "person": {
+      "last_name": "Петров",
+      "first_name": "Петр",
+      "birthdate": "1980.01.01"
+    },
+    "convictions": [],
+    "status": "no_convictions"
+  },
+  "error": null
+}
+```
+
+---
+
+## Получение результатов {#результаты}
+
+### Определение готовности результата
+
+Используйте это алгоритм для проверки результата:
+
+```
+НАЧАЛО
+  ↓
+Отправить задачу → task_id
+  ↓
+Получить статус
+  ↓
+  ├─ Статус = "Processing" → Ждать 3-5 сек → Повторить получение статуса
+  ├─ Статус = "Done" → ✅ Результат готов!
+  └─ Статус = "Error" → ❌ Произошла ошибка
+КОНЕЦ
+```
+
+### Python пример с polling:
+
+```python
+import requests
+import time
+
+def create_and_wait_for_result(base_url, parser_type, **params):
+    """
+    Создает задачу и ждет результата
+    
+    Args:
+        base_url: URL API (например: http://localhost:10221)
+        parser_type: Тип парсера (EPTS, FSSP, GIBDD, NSIS, FTS)
+        **params: Дополнительные параметры
+    
+    Returns:
+        dict: Результат парсинга
+    """
+    # Создание задачи
+    create_url = f"{base_url}/create_task/"
+    params['parser_type'] = parser_type
+    
+    response = requests.get(create_url, params=params)
+    task_id = response.json()['task_id']
+    print(f"✓ Задача создана: {task_id}")
+    
+    # Polling результата
+    status_url = f"{base_url}/task_status/{task_id}"
+    max_attempts = 60  # максимум 5 минут (60 * 5 сек)
+    attempt = 0
+    
+    while attempt < max_attempts:
+        response = requests.get(status_url)
+        data = response.json()
+        status = data['status']
+        
+        if status == 'Done':
+            print(f"✓ Задача завершена")
+            return data['result']
+        
+        elif status == 'Error':
+            print(f"✗ Ошибка: {data['error']['message']}")
+            raise Exception(data['error']['message'])
+        
+        print(f"⏳ Обработка... попытка {attempt + 1}/{max_attempts}")
+        time.sleep(5)
+        attempt += 1
+    
+    raise TimeoutError("Истекло время ожидания результата")
+
+# Использование:
+try:
+    result = create_and_wait_for_result(
+        'http://localhost:10221',
+        'FSSP',
+        last_name='Иванов',
+        name='Иван',
+        birthdate='1990.01.01'
+    )
+    print("Результат:", result)
+except Exception as e:
+    print(f"Ошибка: {e}")
+```
+
+---
+
+### JavaScript пример с async/await:
+
+```javascript
+async function createAndWaitForResult(baseUrl, parserType, params = {}) {
+  try {
+    // Создание задачи
+    const createUrl = new URL(`${baseUrl}/create_task/`);
+    createUrl.searchParams.append('parser_type', parserType);
+    
+    Object.entries(params).forEach(([key, value]) => {
+      createUrl.searchParams.append(key, value);
+    });
+    
+    const createResponse = await fetch(createUrl);
+    const { task_id } = await createResponse.json();
+    console.log(`✓ Задача создана: ${task_id}`);
+    
+    // Polling результата
+    const statusUrl = `${baseUrl}/task_status/${task_id}`;
+    let attempt = 0;
+    const maxAttempts = 60;
+    
+    while (attempt < maxAttempts) {
+      const statusResponse = await fetch(statusUrl);
+      const data = await statusResponse.json();
+      
+      if (data.status === 'Done') {
+        console.log('✓ Задача завершена');
+        return data.result;
+      }
+      
+      if (data.status === 'Error') {
+        throw new Error(data.error.message);
+      }
+      
+      console.log(`⏳ Обработка... попытка ${attempt + 1}/${maxAttempts}`);
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      attempt++;
+    }
+    
+    throw new Error('Истекло время ожидания результата');
+  } catch (error) {
+    console.error(`✗ Ошибка: ${error.message}`);
+    throw error;
+  }
+}
+
+// Использование:
+(async () => {
+  try {
+    const result = await createAndWaitForResult(
+      'http://localhost:10221',
+      'FSSP',
+      {
+        last_name: 'Иванов',
+        name: 'Иван',
+        birthdate: '1990.01.01'
+      }
+    );
+    console.log('Результат:', result);
+  } catch (error) {
+    console.error('Ошибка:', error);
+  }
+})();
+```
+
+---
+
+## Обработка ошибок {#ошибки}
+
+### Типы ошибок при создании задачи
+
+| Ошибка | Код | Причина | Как исправить |
+|--------|-----|--------|---------------|
+| Неверные параметры | 400 | Отсутствуют обязательные параметры или неверный формат | Проверьте `parser_type` и требуемые параметры |
+| Неверный ВИН | 400 | ВИН должен быть 12-17 символов | Убедитесь, что ВИН содержит 12-17 символов |
+| Неверная дата | 400 | Формат даты не поддерживается | Используйте форматы: DD.MM.YYYY или YYYY-MM-DD |
+| Внутренняя ошибка | 500 | Ошибка на сервере | Повторите запрос позже |
+
+### Типы ошибок при обработке задачи
+
+| Статус | Причина | Как исправить |
+|--------|--------|---------------|
+| Не удалось подключиться | Сервис недоступен | Проверьте интернет соединение, повторите позже |
+| Неверные данные для поиска | Некорректные параметры поиска | Проверьте корректность введенных данных |
+| CAPTCHA не решена | Не удалось решить CAPTCHA (GIBDD) | Повторите запрос |
+| Лимит запросов | Превышен лимит к сервису | Подождите и повторите позже |
+
+### Пример обработки ошибок
+
+```python
+import requests
+
+def safe_parse(base_url, parser_type, **params):
+    """Безопасный парсинг с обработкой ошибок"""
+    
+    try:
+        # 1. Валидация параметров
+        if not parser_type:
+            raise ValueError("parser_type обязателен")
+        
+        # 2. Создание задачи
+        response = requests.get(
+            f"{base_url}/create_task/",
+            params={'parser_type': parser_type, **params},
+            timeout=10
+        )
+        
+        if response.status_code != 200:
+            error_data = response.json()
+            raise Exception(f"Ошибка создания задачи: {error_data['error']}")
+        
+        task_id = response.json()['task_id']
+        
+        # 3. Polling с обработкой ошибок
+        max_attempts = 30
+        for attempt in range(max_attempts):
+            try:
+                status_response = requests.get(
+                    f"{base_url}/task_status/{task_id}",
+                    timeout=10
+                )
+                data = status_response.json()
+                
+                if data['status'] == 'Done':
+                    return data['result']
+                
+                elif data['status'] == 'Error':
+                    raise Exception(data['error']['message'])
+                
+            except requests.Timeout:
+                print(f"Timeout при проверке статуса (попытка {attempt + 1})")
+                time.sleep(5)
+                continue
+            
+            time.sleep(5)
+        
+        raise TimeoutError("Превышено время ожидания")
+        
+    except ValueError as e:
+        print(f"❌ Ошибка валидации: {e}")
+        return None
+    except Exception as e:
+        print(f"❌ Ошибка: {e}")
+        return None
+
+# Использование
+result = safe_parse(
+    'http://localhost:10221',
+    'FSSP',
+    last_name='Иванов',
+    name='Иван'
+)
+if result:
+    print("Результат:", result)
+```
+
+---
+
+## Жизненный цикл задачи {#жизненный-цикл}
+
+### Диаграмма состояний
+
+```
+┌─────────────────────────┐
+│   Клиент отправляет     │
+│    запрос на парсинг    │
+└────────────┬────────────┘
+             │
+             ▼
+┌─────────────────────────┐
+│  /create_task/          │
+│  Валидация параметров   │
+└────────────┬────────────┘
+             │
+        ┌────┴─────┐
+        │ (успех)  │
+        ▼          ▼
+   Добавить   ERROR
+   в очередь  (400)
+        │
+        ▼
+┌─────────────────────────┐
+│  Task Status:           │
+│  "Processing"           │
+│  (в БД и очереди)       │
+└────────────┬────────────┘
+             │
+    ┌────────┴──────────┐
+    ▼                   ▼
+┌─────────┐    ┌──────────────┐
+│ Worker  │    │ Клиент       │
+│ берет   │    │ периодически │
+│ задачу  │    │ проверяет    │
+│ из      │    │ статус       │
+│ очереди │    │ (polling)    │
+└────┬────┘    └──────────────┘
+     │
+     ▼
+┌─────────────────────────┐
+│ Парсинг данных          │
+│ (может быть long-running)
+└────────────┬────────────┘
+             │
+        ┌────┴────┐
+        │          │
+        ▼          ▼
+    SUCCESS     ERROR
+        │          │
+        ▼          ▼
+┌──────────┐  ┌──────────┐
+│  Status: │  │  Status: │
+│  "Done"  │  │  "Error" │
+│ result:  │  │ error:   │
+│  {...}   │  │ {...}    │
+└──────────┘  └──────────┘
+        │          │
+        └────┬─────┘
+             │
+             ▼
+┌─────────────────────────┐
+│ Клиент получает         │
+│ результат или ошибку    │
+└─────────────────────────┘
+```
+
+### Таблица переходов состояний
+
+| Текущее состояние | Событие | Новое состояние | Описание |
+|------------------|--------|-----------------|---------|
+| - | Создана задача | `Processing` | Задача добавлена в очередь |
+| `Processing` | Worker начал обработку | `Processing` | Задача обрабатывается |
+| `Processing` | Результат получен | `Done` | Результат сохранен в БД |
+| `Processing` | Возникла ошибка | `Error` | Ошибка сохранена в БД |
+| `Done` | - | `Done` | Финальное состояние |
+| `Error` | - | `Error` | Финальное состояние |
+
+### Примерное время обработки
+
+| Парсер | Мин время | Макс время | Среднее |
+|--------|-----------|-----------|---------|
+| EPTS | 1 сек | 30 сек | 5-10 сек |
+| FSSP | 2 сек | 60 сек | 15-30 сек |
+| FTS | 1 сек | 30 сек | 5-10 сек |
+| GIBDD | 5 сек | 120 сек | 20-40 сек* |
+| NSIS | 2 сек | 45 сек | 10-20 сек |
+
+*GIBDD может занять больше времени из-за решения CAPTCHA
+
+---
+
+## Рекомендации по использованию
+
+### ✅ Рекомендации
+
+- 📊 **Используйте polling с интервалом 3-5 секунд** для оптимального баланса
+- 💾 **Сохраняйте task_id** для восстановления результата позже
+- 🔄 **Реализуйте exponential backoff** для retry при ошибках временного характера
+- 📈 **Обрабатывайте несколько задач одновременно** для повышения пропускной способности
+- 🚀 **Кэшируйте результаты** на клиенте для избежания повторных запросов
+
+### ❌ Антипаттерны
+
+- 🚫 **Не отправляйте более 100 задач в секунду**
+- 🚫 **Не проверяйте статус чаще чем раз в секунду**
+- 🚫 **Не игнорируйте ошибки в процессе обработки**
+- 🚫 **Не оставляйте долгоживущие polling потоки без таймаутов**
+
+---
+
+## Заключение
+
+Асинхронная обработка через Parsers API позволяет эффективно масштабировать приложение для работы с несколькими запросами одновременно. Используйте предоставленные примеры и рекомендации для интеграции в вашу систему.
+
+Если у вас возникли вопросы, обратитесь к документации отдельных парсеров или к основному README.md файлу.
