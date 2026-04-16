@@ -45,11 +45,20 @@ async def read_items(params: SyncRequest = Depends()):
 
 # Маршрут для создания задачи на парсинг асинхронно
 @app.get("/create_task/")
-async def async_read_items(params: AsyncRequest = Depends()):
+async def async_create_task(params: AsyncRequest = Depends()):
+
+    #Проверяем наличие кэша в статусе done или processing, если кэш есть, то сразу возвращаем task_id, если нет, то создаем задачу на парсинг
 
     response = ResponseBuilder(task_id=params.task_id)
-    try:
-        # Выбор очереди парсера и добавление задачи в очередь
+    try: 
+        #TODO убрать этот костыль и сделать через классы и наследование, чтобы не дублировать код для разных парсеров
+        # Если передан VIN, проверяем, есть ли уже активная или готовая задача для него
+        if params.vin:
+            processing_task_id = taskHelper.get_active_vin_task(params.vin, params.parser_type)
+            if processing_task_id:
+                return {"task_id": processing_task_id}
+
+        # Выбор очереди парсера и добавление новой задачи в очередь
         queue = Workers.get_queue(params.parser_type)
         taskHelper.create_task(params)
         queue.put(params)
@@ -64,7 +73,7 @@ async def async_read_items(params: AsyncRequest = Depends()):
     
 # Получение результата
 @app.get("/task_status/{task_id}")
-async def async_read_items(params: AsyncResult = Depends()):
+async def async_task_status(params: AsyncResult = Depends()):
 
     response = ResponseBuilder(task_id=params.task_id)
     try:
@@ -81,7 +90,7 @@ async def async_read_items(params: AsyncResult = Depends()):
 
 # Получение результата с ожиданием (пуллинг с таймаутом)
 @app.get("/task_status/{task_id}/wait")
-async def async_read_items(params: AsyncResult = Depends(), timeout: int = 20):
+async def async_task_wait(params: AsyncResult = Depends(), timeout: int = 20):
 
     response = ResponseBuilder(task_id=params.task_id)
     interval = 0.1  # Интервал между проверками статуса задачи

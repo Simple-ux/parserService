@@ -86,7 +86,7 @@ class ParserFTS(BaseParser):
                 'vin': vin
             }
             start = datetime.datetime.now()
-            resp_post = session.post('https://customs.gov.ru/cars', data=payload)
+            resp_post = session.post('https://customs.gov.ru/cars', data=payload, timeout=20)
             print(datetime.datetime.now() - start)
             soup = BeautifulSoup(resp_post.text, 'html.parser')
 
@@ -129,8 +129,9 @@ class ParserFTS(BaseParser):
 
             fmt = "%Y-%m-%d"
             formated_date = data['ReleaseDate'].split(' ')[0]
-            formated_date = datetime.datetime.strptime(str(formated_date), fmt).date()
-            formated_date = formated_date.strftime("%d.%m.%Y")
+            if formated_date != 'null':
+                formated_date = datetime.datetime.strptime(str(formated_date), fmt).date()
+                formated_date = formated_date.strftime("%d.%m.%Y")
             data['ReleaseDate'] = formated_date
 
             session.close()

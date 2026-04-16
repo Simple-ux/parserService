@@ -130,6 +130,27 @@ class taskHelper:
             traceback.print_exc()
         finally:
             conn.close()
+
+    # Получение активной (Processing или Done) задачи по VIN и типу парсера
+    @classmethod
+    def get_active_vin_task(cls, vin: str, parser_type: str):
+        conn = sqlite3.connect('tasks.db')
+        try:
+            cursor = conn.cursor()
+            cursor.execute(""" SELECT id, status from tasks 
+                                WHERE vin = ? AND service = ? AND status = 'Processing'
+                                ORDER BY created_at DESC LIMIT 1""",
+                            (vin, parser_type,))
+            row = cursor.fetchone()
+        except Exception as e:
+            traceback.print_exc()
+            raise e
+        finally:
+            conn.close()
+
+        if row:
+            return row[0]
+        return None
     
     # Вспомогательная функция для получения текущей даты и времени в нужном формате
     @classmethod
