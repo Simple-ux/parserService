@@ -4,12 +4,12 @@ import tensorflow as tf
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
-
 class modelFactory:
 
     models = {
         'GIBDD': tf.keras.models.load_model('models/model_GIBDD.keras', compile=False),
         'EPTS': tf.keras.models.load_model('models/model_EPTS.keras', compile=False),
+        'ROSR': tf.keras.models.load_model('models/model_ROSR.keras', compile=False),
         'FSSP': tf.lite.Interpreter(model_path="models/model_FSSP.tflite")
     }
     

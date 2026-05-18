@@ -32,7 +32,12 @@ class ParserFTS(BaseParser):
         print(f'Started thread for FTS parser')
         while True:
             try:
+                headers = {
+                    'User-Agent': user_agent.generate_user_agent(),
+                    'Host': 'customs.gov.ru'
+                }
                 session = requests.Session()
+                session.headers.update(headers)
                 session.proxies = ParserFTS.get_proxy()
                 xsrf_token, session = ParserFTS.get_xsrf(session)
                 ParserFTS.session = session
@@ -109,9 +114,9 @@ class ParserFTS(BaseParser):
                 'номер шасси': 'ChassisNumber',
                 'дата выпуска в свободное обращение': 'ReleaseDate'
             }
-            for item in soup.select('.vin-check__card-item'):
-                title = item.select_one('.vin-check__card-title')
-                value = item.select_one('.vin-check__card-info')
+            for item in soup.select('.car-register-grid__item'):
+                title = item.select_one('.car-register-grid__label')
+                value = item.select_one('.car-register-grid__value')
                 if title and value:
                     key = title.get_text(strip=True).lower()
                     val = value.get_text(strip=True)

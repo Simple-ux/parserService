@@ -92,7 +92,7 @@ class ParserNSIS(BaseParser):
                             "Host": "nsis.ru",
                             "X-Requested-With": "XMLHttpRequest",
                             "Cache-Control": "no-cache",
-                            "Cookie": "__admin_identity=e2fa14c746a31d5735cb0a68e2844470",
+                            "Cookie": "__admin_identity=9f990967a73c8e5d41c17ea5af9aeadb",
                             "Content-Type": data.content_type,
                             "Content-Length": str(data.len),
                             "User-Agent": user_agent.generate_user_agent()
@@ -143,7 +143,7 @@ class ParserNSIS(BaseParser):
                 'Pragma': 'no-cache',
                 'X-Requested-With': 'XMLHttpRequest',
                 'Cache-Control': 'no-cache',
-                'Cookie': '__admin_identity=069cb789dd3d08b1f822324b482a4f5a'
+                'Cookie': '__admin_identity=9f990967a73c8e5d41c17ea5af9aeadb'
             }
             time.sleep(3)
             html = ''

@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import os, sys, queue, random
 import datetime, time
-import urllib3, requests
+import urllib3
 from user_agent import generate_user_agent
 import json
 from bs4 import BeautifulSoup
@@ -11,7 +11,10 @@ import re
 import base64
 from io import BytesIO
 import tensorflow as tf
+from curl_cffi import requests
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+from parserFSSP.map_result import HEADER_MAP
+from random import shuffle
 
 
 
@@ -27,7 +30,7 @@ from parserFSSP.predict import predict, predict_tflite
 class ParserFSSP(BaseParser):
 
     model = modelFactory.get_model('FSSP')
-
+    
     def parse_fssp_data(json_response):
         # Извлекаем JSON данные из строки ответа
         # json_str = json_response.replace('\\', '').replace('rn', '').replace('  ', ' ')
@@ -96,10 +99,73 @@ class ParserFSSP(BaseParser):
         ####################################################
         ####################################################
         # 1-й запрос, получаем капчу
+
+        # ФССП требует HTTP/2, и их антидудос проверяет fingerprint браузера
+        # Когда на запрос ниже начинает приходить "Доступ запрещен" - 
+        # значит их система срисовала fingerprint и нужно поменять версию браузера в impersonate 
+        
+        # Возможные версии
+        # chrome99
+        # chrome100
+        # chrome101
+        # chrome104
+        # chrome107
+        # chrome110
+        # chrome116 1
+        # chrome119 1
+        # chrome120 1
+        # chrome99_android
+        # edge99
+        # edge101
+        # safari15_3 2
+        # safari15_5 2
+        # safari17_0 1
+        # safari17_2_ios 1
+
+
         try:
             status_code = 0
             while status_code != 200:
-                req = session.get(f'https://is-go.fssp.gov.ru/ajax_search?system=ip&is[extended]=1&nocache=1&is[variant]=1&is[region_id][0]=-1&is[last_name]={last_name}&is[first_name]={name}&is[drtr_name]=&is[ip_number]=&is[patronymic]={middle_name}&is[date]={birthdate}&is[address]=&is[id_number]=&is[id_type][0]=&is[id_issuer]=&is[inn]=&callback={callback}', verify= False)
+                # req = session.get(f'https://is-go.fssp.gov.ru/ajax_search?system=ip&is[extended]=1&nocache=1&is[variant]=1&is[region_id][0]=-1&is[last_name]={last_name}&is[first_name]={name}&is[drtr_name]=&is[ip_number]=&is[patronymic]={middle_name}&is[date]={birthdate}&is[address]=&is[id_number]=&is[id_type][0]=&is[id_issuer]=&is[inn]=&callback={callback}', verify= False)
+                
+                #Рабочие версии браузеров для парсинга ФССП (Пока что)
+                BROWSER_VERSIONS = [
+                        "chrome99",
+                        "chrome100",
+                        "chrome101",
+                        "chrome104",
+                        "chrome107",
+                        "chrome110",
+                        "chrome116",
+                        "safari153",
+                        "safari155",
+                        "safari170",
+                        "safari180",
+                        "safari184",
+                        "safari260",
+                        "safari2601",
+                        "firefox133",
+                        "firefox135",
+                        "firefox144",
+                        "firefox147",
+                        "tor145"]     
+
+                shuffle(BROWSER_VERSIONS)
+                for version in BROWSER_VERSIONS:
+                    session = requests.Session(
+                        impersonate=version,
+                        http_version="v2"
+                    )
+                    req = session.get(
+                        url=f'https://is-go.fssp.gov.ru/ajax_search?system=ip&is[extended]=1&nocache=1&is[variant]=1&is[region_id][0]=-1&is[last_name]={last_name}&is[first_name]={name}&is[drtr_name]=&is[ip_number]=&is[patronymic]={middle_name}&is[date]={birthdate}&is[address]=&is[id_number]=&is[id_type][0]=&is[id_issuer]=&is[inn]=&callback={callback}',
+                    )
+                    if req.status_code == 200:
+                        print(f'Успешно получили капчу с версией {version}')
+                        break
+                    if req.status_code == 403:
+                        print(f'Версия {version} заблокирована, пробуем другую...')
+                        continue
+
                 if req.status_code != 200:
                     print('NODE ERROR ', req.status_code)
                     print(req.text)
@@ -168,7 +234,7 @@ class ParserFSSP(BaseParser):
 
             try:
                 link = f'https://is-go.fssp.gov.ru/ajax_search?system=ip&is[extended]=1&nocache=1&is[variant]=1&is[region_id][0]=-1&is[last_name]={last_name}&is[first_name]={name}&is[drtr_name]=&is[ip_number]=&is[patronymic]={middle_name}&is[date]={birthdate}&is[address]=&is[id_number]=&is[id_type][0]=&is[id_issuer]=&is[inn]=&callback={callback}&code_id={code_id}&code={solved}&_={timestamp}'
-                req = session.get(link, verify= False, timeout = 10)
+                req = session.get(link, timeout = 10)
                 attempt += 1
                 if 'неверных попыток' in req.text:
                     continue
@@ -194,13 +260,22 @@ class ParserFSSP(BaseParser):
                 break
             
             answ = 1
+        try:
+            records = parsed.to_dict(orient="records")
+            # Map verbose headers to normalized keys
+            for rec in records:
+                mapped = {}
+                for k, v in rec.items():
+                    new_key = HEADER_MAP.get(k, k)
+                    mapped[new_key] = v
+        except Exception as e:
+            print(req.text)
 
-        parsed = parsed.to_dict(orient="records")
         result = {}
         result['last_name'] = last_name
         result['first_name'] = name
         result['middle_name'] = middle_name
         result['birth_date'] = birthdate
-        result['data'] = parsed
+        result = {**result, **mapped}
 
         return result

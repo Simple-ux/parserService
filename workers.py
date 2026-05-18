@@ -13,6 +13,10 @@ from datetime import datetime, timedelta
 # Очереди для каждого парсера
 queues = {parser_name: Queue() for parser_name in parserFactory.parsers.keys()}
 
+# Количество рабочих потоков для каждого парсера
+thread_workers_count = parserFactory.thread_workers_count
+
+
 # Класс для управления рабочими потоками
 class Workers:
 
@@ -57,10 +61,12 @@ class Workers:
     # Запуск рабочих потоков для каждой очереди парсеров (асинхронный парсинг)
     @staticmethod
     def start_queue_workers():
+        
         for parser_name, queue in queues.items():
-            thread = threading.Thread(target=Workers.queue_worker, daemon = True, name=f"QueueConsumer{parser_name}", args=(parser_name, queue))
-            thread.start()
-            print(f'Started queue worker for {parser_name} parser')
+            for num in range(thread_workers_count.get(parser_name, 1)):
+                thread = threading.Thread(target=Workers.queue_worker, daemon = True, name=f"QueueConsumer{parser_name}_{num + 1}", args=(parser_name, queue))
+                thread.start()
+                print(f'Started {num + 1}th queue worker for {parser_name} parser')
 
     @staticmethod
     def schedule_workers():

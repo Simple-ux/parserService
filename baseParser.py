@@ -22,7 +22,7 @@ class BaseParser(ABC):
 
     # Получение прокси
     @classmethod
-    def get_proxy(cls):
+    def get_proxy(cls, format="requests"):
         if cls.proxy_gen is None:
             cls.proxy_gen = cls.proxy_generator()
             
@@ -31,11 +31,18 @@ class BaseParser(ABC):
         proxy_user = proxy_splited[2]
         proxy_pass = proxy_splited[3]
         proxy_host = proxy_splited[0] + ':' + proxy_splited[1]
-        proxies = {
-            "http": f"http://{proxy_user}:{proxy_pass}@{proxy_host}",
-            "https": f"http://{proxy_user}:{proxy_pass}@{proxy_host}"
-        }
+        if format == "requests":
+            proxies = {
+                "http": f"http://{proxy_user}:{proxy_pass}@{proxy_host}",
+                "https": f"http://{proxy_user}:{proxy_pass}@{proxy_host}"
+            }
+        elif format == "httpx":
+            proxies= {  "http://": f"http://{proxy_user}:{proxy_pass}@{proxy_host}",
+                        "https://": f"http://{proxy_user}:{proxy_pass}@{proxy_host}"}
+        else:
+            raise ValueError("Unsupported proxy format")
         return proxies
+    
     
     @classmethod
     def thread_worker(cls, model):

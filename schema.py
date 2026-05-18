@@ -14,6 +14,8 @@ class SyncRequest(BaseModel):
     last_name: Optional[str] = Field(None, max_length = 20, description="Фамилия")
     middle_name: Optional[str] = Field(None, max_length = 30, description="Отчество")
     birthdate: Optional[str] = Field(None, description="Дата рождения")
+    addr: Optional[str] = Field(None, max_length = 300, description="Адрес")
+    cad: Optional[str] = Field(None, max_length = 40, description="Кадастровый номер")
     cache: Optional[int] = Field(1, description="Использовать кэш")
 
     _call_type: str = PrivateAttr('sync')
@@ -50,7 +52,7 @@ class SyncRequest(BaseModel):
             for fmt in formats:
                 try:
                     formated_date = datetime.strptime(str(date), fmt).date()
-                    formated_date = formated_date.strftime("%Y.%m.%D")
+                    formated_date = formated_date.strftime("%d.%m.%Y")
                     return formated_date
                 except:
                     pass
