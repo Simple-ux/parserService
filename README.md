@@ -129,12 +129,6 @@ parsers-api/
 3. Register it in `parserFactory.py`.
 4. Add any required models in `modelFactory.py`.
 
-## Contributing
 
-1. Fork the repository.
-2. Create a feature branch.
-3. Commit your changes.
-4. Push to the branch.
-5. Open a Pull Request.
 
 
