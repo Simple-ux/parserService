@@ -120,7 +120,6 @@ parsers-api/
 ├── models/                # ML models
 ├── parser*/               # Individual parser modules
 ├── utils/                 # Utilities (response builder, task helper)
-└── env/                   # Virtual environment
 ```
 
 ### Adding a New Parser
