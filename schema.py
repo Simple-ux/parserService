@@ -1,6 +1,6 @@
 from typing import List, Optional
 from datetime import datetime, date
-from pydantic import BaseModel, Field, ConfigDict, PrivateAttr, field_validator
+from pydantic import BaseModel, Field, ConfigDict, PrivateAttr, field_validator, ValidationError
 import uuid
 
 
@@ -16,6 +16,7 @@ class SyncRequest(BaseModel):
     birthdate: Optional[str] = Field(None, description="Дата рождения")
     addr: Optional[str] = Field(None, max_length = 300, description="Адрес")
     cad: Optional[str] = Field(None, max_length = 40, description="Кадастровый номер")
+    vessel_num: Optional[int] = Field(None, description="Номер судна")
     cache: Optional[int] = Field(1, description="Использовать кэш")
 
     _call_type: str = PrivateAttr('sync')
@@ -58,9 +59,10 @@ class SyncRequest(BaseModel):
                     pass
 
             if not formated_date:
-                raise ValueError("Invalid date format")
+                print("Invalid date format")
         else:
             pass
+
     
 
 # Расширение SyncRequest для асинхронных запросов

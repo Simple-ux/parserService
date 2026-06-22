@@ -51,10 +51,10 @@ async def async_create_task(params: AsyncRequest = Depends()):
 
     response = ResponseBuilder(task_id=params.task_id)
     try: 
-        #TODO убрать этот костыль и сделать через классы и наследование, чтобы не дублировать код для разных парсеров
-        # Если передан VIN, проверяем, есть ли уже активная или готовая задача для него
-        if params.vin:
-            processing_task_id = taskHelper.get_active_vin_task(params.vin, params.parser_type)
+        #TODO убрать этот костыль, чтобы не дублировать код для разных парсеров
+        # проверяем, есть ли уже активная или готовая задача под наши параметры
+        if params.cache == 0:
+            processing_task_id = taskHelper.get_active_vin_task(params)
             if processing_task_id:
                 return {"task_id": processing_task_id}
 

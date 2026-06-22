@@ -12,9 +12,24 @@ class taskHelper:
         call_date = cls.get_datetime_now()
         try:
             cursor = conn.cursor()
-            cursor.execute("""INSERT INTO tasks (id, call_type, service, vin, status, result, error, created_at, updated_at) 
-                            VALUES (?,?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (params.task_id, params.call_type, params.parser_type, params.vin, 'Processing', '', '', call_date, '',))
+            cursor.execute("""INSERT INTO tasks (id, call_type, parser_type, vin, vessel_num, addr, cad, name, last_name, middle_name, birthdate, status, result, error, created_at, updated_at) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (   params.task_id,
+                            params.call_type,
+                            params.parser_type,
+                            params.vin,
+                            params.vessel_num,
+                            params.addr,
+                            params.cad,
+                            params.name,
+                            params.last_name,
+                            params.middle_name,
+                            params.birthdate,
+                            'Processing',
+                            '',
+                            '',
+                            call_date,
+                            '',))
             conn.commit()
         except Exception as e:
             traceback.print_exc()
@@ -85,9 +100,13 @@ class taskHelper:
         conn = sqlite3.connect('tasks.db')
         try:
             cursor = conn.cursor()
-            cursor.execute(""" SELECT result from tasks 
-                                WHERE vin = ? AND service = ? AND status = 'Done'""",
-                            (params.vin, params.parser_type,))
+
+            where_clause, params_list = cls.make_where_clause(params)
+            where_clause = where_clause + "AND status = 'Done'"
+
+            cursor.execute(f""" SELECT result from tasks 
+                                WHERE {where_clause} """,
+                            tuple(params_list))
             row = cursor.fetchone()
         except Exception as e:
             traceback.print_exc()
@@ -131,16 +150,19 @@ class taskHelper:
         finally:
             conn.close()
 
-    # Получение активной (Processing или Done) задачи по VIN и типу парсера
+    # Получение активной (Processing) задачи по VIN и типу парсера
     @classmethod
-    def get_active_vin_task(cls, vin: str, parser_type: str):
+    def get_active_vin_task(cls, params):
         conn = sqlite3.connect('tasks.db')
         try:
             cursor = conn.cursor()
+            where_clause, params_list = cls.make_where_clause(params)
+            where_clause = where_clause + "AND status = 'Processing'"
+
             cursor.execute(""" SELECT id, status from tasks 
-                                WHERE vin = ? AND service = ? AND status = 'Processing'
+                                WHERE {where_clause}
                                 ORDER BY created_at DESC LIMIT 1""",
-                            (vin, parser_type,))
+                            tuple(params_list))
             row = cursor.fetchone()
         except Exception as e:
             traceback.print_exc()
@@ -158,4 +180,17 @@ class taskHelper:
         call_date = datetime.datetime.now()
         call_date = call_date.strftime('%Y.%m.%d %H:%M:%S.%f')[:-3]
         return call_date
+    
+    # Вспомогательная функция для создания where clause и списка параметров для SQL запроса на основе переданных параметров
+    @classmethod
+    def make_where_clause(cls, params):
+        where_clause = ''
+        params_list = []
+        for item in vars(params):
+            if item != 'cache' and getattr(params, item) is not None:
+                where_clause += f"{item} = ? AND "
+                params_list.append(getattr(params, item))
+        where_clause = where_clause[:-5]
+        
+        return where_clause, params_list
     

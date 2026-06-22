@@ -77,6 +77,9 @@ class ParserFSSP(BaseParser):
 
         name, last_name, middle_name, birthdate = params.name, params.last_name, params.middle_name, params.birthdate
 
+        if not birthdate:
+            raise ValueError("Birthdate format is not valid or missing")
+
         headers = {}
         headers['User-Agent'] = generate_user_agent()
         headers['Host'] = f'is-go.fssp.gov.ru'

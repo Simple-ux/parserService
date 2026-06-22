@@ -4,6 +4,7 @@ from parserGIBDD.parserGIBDD import ParserGIBDD
 from parserEPTS.parserEPTS import ParserEPTS
 from parserFSSP.parserFSSP import ParserFSSP
 from parserROSR.parserROSR import ParserROSR
+from parserVESSEL.parserVESSEL import ParserVESSEL
 
 
 class parserFactory:
@@ -11,20 +12,22 @@ class parserFactory:
     #Список классов всех парсеров
     parsers = {
         'FTS': ParserFTS,
-        'NSIS': ParserNSIS,
-        'GIBDD': ParserGIBDD,
+        # 'NSIS': ParserNSIS,
+        # 'GIBDD': ParserGIBDD,
         'EPTS': ParserEPTS,
         'ROSR': ParserROSR,
-        'FSSP': ParserFSSP
+        'FSSP': ParserFSSP,
+        'VESSEL': ParserVESSEL
         }
     
     thread_workers_count = {
         'FTS': 3,
-        'NSIS': 1,
-        'GIBDD': 1,
+        # 'NSIS': 1,
+        # 'GIBDD': 1,
         'EPTS': 1,
         'ROSR': 3,
-        'FSSP': 1
+        'FSSP': 1,
+        'VESSEL': 1
     }
     
     @classmethod
